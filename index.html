@@ -367,6 +367,11 @@ const FLOOR_FACE_H = 20;  // height of the 3D front face of floor
 
 let level = [];
 
+// Random int in [min, max] inclusive
+function randInt(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
 function buildLevel() {
   level = [];
   for (let r = 0; r < LEVEL_ROWS; r++) {
@@ -382,26 +387,56 @@ function buildLevel() {
     }
   }
 
-  // Gaps in floor (pits) — remove floor tiles
-  const pits = [[15,16], [30,31], [48,49], [62,63]];
-  for (const [start, end] of pits) {
-    for (let c = start; c <= end; c++) {
+  // ── Random pits ──
+  // Place 3-6 pits spread across the level, avoiding start and exit zones
+  const pitCount = randInt(3, 6);
+  const usedCols = new Set();
+  // Reserve cols 0-5 (start) and 75-79 (exit)
+  for (let c = 0; c <= 5; c++) usedCols.add(c);
+  for (let c = 75; c <= 79; c++) usedCols.add(c);
+
+  for (let i = 0; i < pitCount; i++) {
+    const pitWidth = randInt(1, 2); // 1-2 tiles wide (jumpable)
+    let start;
+    let attempts = 0;
+    do {
+      start = randInt(8, 73);
+      attempts++;
+    } while (attempts < 50 && [...Array(pitWidth + 2)].some((_, j) => usedCols.has(start - 1 + j)));
+
+    if (attempts >= 50) continue;
+    for (let c = start; c < start + pitWidth; c++) {
+      usedCols.add(c);
       for (let r = FLOOR_ROW; r < LEVEL_ROWS; r++) {
         level[r][c] = 0;
       }
-      level[LEVEL_ROWS - 1][c] = 3; // spikes at bottom
+      level[LEVEL_ROWS - 1][c] = 3; // spikes
     }
   }
 
-  // Elevated platforms in corridor
-  // Platform 1: row 7, cols 20-24
-  for (let c = 20; c <= 24; c++) level[7][c] = 1;
-  // Platform 2: row 6, cols 36-40
-  for (let c = 36; c <= 40; c++) level[6][c] = 1;
-  // Platform 3: row 7, cols 52-56
-  for (let c = 52; c <= 56; c++) level[7][c] = 1;
-  // Platform 4: row 6, cols 68-72
-  for (let c = 68; c <= 72; c++) level[6][c] = 1;
+  // ── Random platforms ──
+  // Row 7 or 8 only — both are jumpable from ground (max jump ~2.5 tiles)
+  const platCount = randInt(3, 6);
+  for (let i = 0; i < platCount; i++) {
+    const platWidth = randInt(3, 5);
+    const platRow = randInt(7, 8);
+    let start;
+    let attempts = 0;
+    do {
+      start = randInt(10, 72 - platWidth);
+      attempts++;
+      // Avoid overlapping pits or other platforms
+    } while (attempts < 50 && [...Array(platWidth)].some((_, j) => {
+      const c = start + j;
+      // Don't place platform over a pit
+      return level[FLOOR_ROW][c] !== 1;
+    }));
+
+    if (attempts >= 50) continue;
+    for (let c = start; c < start + platWidth; c++) {
+      level[platRow][c] = 1;
+    }
+  }
 
   // Exit at far right
   level[8][78] = 4;
@@ -409,10 +444,28 @@ function buildLevel() {
 }
 
 // Pillar positions (world X coordinates — at room boundaries and key locations)
-const pillarPositions = [0, 640, 1280, 1920];
+let pillarPositions = [];
 
 // Torch positions (world X coordinates)
-const torchWorldX = [160, 420, 800, 1060, 1440, 1700, 2080, 2340];
+let torchWorldX = [];
+
+function randomizeDecorations() {
+  // Pillars: always at boundaries + 1-2 random mid-room pillars
+  pillarPositions = [0, 640, 1280, 1920];
+  const extraPillars = randInt(1, 3);
+  for (let i = 0; i < extraPillars; i++) {
+    pillarPositions.push(randInt(200, 2300));
+  }
+  pillarPositions.sort((a, b) => a - b);
+
+  // Torches: 6-10 randomly placed along the corridor
+  torchWorldX = [];
+  const torchCount = randInt(6, 10);
+  for (let i = 0; i < torchCount; i++) {
+    torchWorldX.push(randInt(80, 2460));
+  }
+  torchWorldX.sort((a, b) => a - b);
+}
 
 // ─── STONE PATTERN CACHE ──────────────────────────────
 // Pre-generate the stone block pattern for walls
@@ -519,12 +572,15 @@ function initEntities() {
     swordOut: false,
   };
 
-  guards = [
-    createGuard(500, 'patrol'),
-    createGuard(1100, 'patrol'),
-    createGuard(1700, 'patrol'),
-    createGuard(2200, 'patrol'),
-  ];
+  // Place 3-5 guards spread across the level, avoiding start zone
+  const guardCount = randInt(3, 5);
+  guards = [];
+  const guardZoneSize = Math.floor(2000 / guardCount);
+  for (let i = 0; i < guardCount; i++) {
+    const zoneStart = 300 + i * guardZoneSize;
+    const gx = randInt(zoneStart, zoneStart + guardZoneSize - 100);
+    guards.push(createGuard(Math.min(gx, 2350), 'patrol'));
+  }
 
   particles = [];
 }
@@ -1579,6 +1635,7 @@ function draw() {
 
 function startGame() {
   buildLevel();
+  randomizeDecorations();
   initEntities();
   cameraX = 0;
   frameCount = 0;
