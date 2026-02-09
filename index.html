@@ -2,18 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Blade of the Lost Prince</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #000;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    justify-content: flex-start;
     align-items: center;
     min-height: 100vh;
     font-family: monospace;
     overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #gameWrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100vh;
   }
   #gameContainer {
     position: relative;
@@ -21,6 +33,7 @@
   canvas {
     display: block;
     image-rendering: pixelated;
+    touch-action: none;
   }
   #startScreen, #gameOverScreen, #winScreen {
     position: absolute;
@@ -66,35 +79,106 @@
     50% { opacity: 0.2; }
   }
   .hidden { display: none !important; }
+
+  /* ─── Touch Controls ─────────────────────────────── */
+  #touchControls {
+    display: none;
+    width: 100%;
+    max-width: 640px;
+    padding: 12px 16px;
+    justify-content: space-between;
+    align-items: center;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .touch-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .touch-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(100, 100, 140, 0.35);
+    border: 2px solid rgba(160, 160, 200, 0.4);
+    color: rgba(200, 200, 220, 0.85);
+    font-family: monospace;
+    font-weight: bold;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+    transition: background 0.08s;
+  }
+  .touch-btn:active, .touch-btn.active {
+    background: rgba(160, 140, 80, 0.5);
+    border-color: rgba(212, 164, 74, 0.7);
+    color: #d4a44a;
+  }
+  .touch-dpad {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    font-size: 26px;
+  }
+  .touch-action {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
 </style>
 </head>
 <body>
-<div id="gameContainer">
-  <canvas id="game" width="640" height="400"></canvas>
+<div id="gameWrapper">
+  <div id="gameContainer">
+    <canvas id="game" width="640" height="400"></canvas>
 
-  <div id="startScreen">
-    <h1>Blade of the Lost Prince</h1>
-    <p class="subtitle">Escape the Dungeon</p>
-    <div class="controls-info">
-      <span>Arrow Keys</span> — Move<br>
-      <span>Shift + Arrow</span> — Walk (slow)<br>
-      <span>Space</span> — Jump<br>
-      <span>Enter</span> — Attack<br>
-      <span>S</span> — Block
+    <div id="startScreen">
+      <h1>Blade of the Lost Prince</h1>
+      <p class="subtitle">Escape the Dungeon</p>
+      <div class="controls-info" id="controlsDesktop">
+        <span>Arrow Keys</span> — Move<br>
+        <span>Shift + Arrow</span> — Walk (slow)<br>
+        <span>Space</span> — Jump<br>
+        <span>Enter</span> — Attack<br>
+        <span>S</span> — Block
+      </div>
+      <div class="controls-info hidden" id="controlsMobile">
+        Use the on-screen buttons below<br>
+        <span>D-Pad</span> — Move &nbsp; <span>JUMP</span> — Jump<br>
+        <span>ATK</span> — Attack &nbsp; <span>BLK</span> — Block
+      </div>
+      <p class="blink" id="startPrompt">Press ENTER to Start</p>
     </div>
-    <p class="blink">Press ENTER to Start</p>
+
+    <div id="gameOverScreen" class="hidden">
+      <h1>You Died</h1>
+      <p class="subtitle">The dungeon claims another soul...</p>
+      <p class="blink" id="retryPrompt">Press ENTER to Retry</p>
+    </div>
+
+    <div id="winScreen" class="hidden">
+      <h1>Freedom!</h1>
+      <p class="subtitle">You have escaped the dungeon!</p>
+      <p class="blink" id="playAgainPrompt">Press ENTER to Play Again</p>
+    </div>
   </div>
 
-  <div id="gameOverScreen" class="hidden">
-    <h1>You Died</h1>
-    <p class="subtitle">The dungeon claims another soul...</p>
-    <p class="blink">Press ENTER to Retry</p>
-  </div>
-
-  <div id="winScreen" class="hidden">
-    <h1>Freedom!</h1>
-    <p class="subtitle">You have escaped the dungeon!</p>
-    <p class="blink">Press ENTER to Play Again</p>
+  <div id="touchControls">
+    <div class="touch-group">
+      <div class="touch-btn touch-dpad" data-key="ArrowLeft">&#9664;</div>
+      <div class="touch-btn touch-dpad" data-key="ArrowRight">&#9654;</div>
+    </div>
+    <div class="touch-group">
+      <div class="touch-btn touch-action" data-key="Space">JUMP</div>
+      <div class="touch-btn touch-action" data-key="Enter">ATK</div>
+      <div class="touch-btn touch-action" data-key="KeyS">BLK</div>
+    </div>
   </div>
 </div>
 
@@ -103,6 +187,48 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const W = canvas.width;
 const H = canvas.height;
+
+// ─── TOUCH / MOBILE DETECTION ─────────────────────────
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+if (isTouchDevice) {
+  document.getElementById('touchControls').style.display = 'flex';
+  document.getElementById('controlsDesktop').classList.add('hidden');
+  document.getElementById('controlsMobile').classList.remove('hidden');
+  document.getElementById('startPrompt').textContent = 'Tap to Start';
+  document.getElementById('retryPrompt').textContent = 'Tap to Retry';
+  document.getElementById('playAgainPrompt').textContent = 'Tap to Play Again';
+}
+
+// ─── RESPONSIVE CANVAS SCALING ────────────────────────
+function resizeCanvas() {
+  const container = document.getElementById('gameContainer');
+  const wrapper = document.getElementById('gameWrapper');
+  const touchEl = document.getElementById('touchControls');
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Reserve space for touch controls on touch devices
+  const touchHeight = isTouchDevice ? 100 : 0;
+  const availH = vh - touchHeight;
+
+  // Scale canvas to fit width, constrained by available height
+  let scale = vw / W;
+  if (H * scale > availH) {
+    scale = availH / H;
+  }
+
+  canvas.style.width = Math.floor(W * scale) + 'px';
+  canvas.style.height = Math.floor(H * scale) + 'px';
+
+  // Size the touch controls to match canvas width
+  if (isTouchDevice) {
+    touchEl.style.maxWidth = Math.floor(W * scale) + 'px';
+  }
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
 // ─── COLORS — Authentic PoP dungeon palette ───────────
 const COL = {
@@ -173,6 +299,51 @@ document.addEventListener('keyup', e => {
   keys[e.code] = false;
   e.preventDefault();
 });
+
+// ─── TOUCH INPUT ──────────────────────────────────────
+if (isTouchDevice) {
+  const touchBtns = document.querySelectorAll('.touch-btn');
+  touchBtns.forEach(btn => {
+    const keyCode = btn.dataset.key;
+
+    btn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (!keys[keyCode]) justPressed[keyCode] = true;
+      keys[keyCode] = true;
+      btn.classList.add('active');
+    }, { passive: false });
+
+    btn.addEventListener('touchend', e => {
+      e.preventDefault();
+      keys[keyCode] = false;
+      btn.classList.remove('active');
+    }, { passive: false });
+
+    btn.addEventListener('touchcancel', e => {
+      e.preventDefault();
+      keys[keyCode] = false;
+      btn.classList.remove('active');
+    }, { passive: false });
+  });
+
+  // Tap on canvas or overlay screens to start/restart
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (gameState === 'start' || gameState === 'gameover' || gameState === 'win') {
+      startGame();
+    }
+  }, { passive: false });
+
+  // Tap on overlay screens to start/restart
+  ['startScreen', 'gameOverScreen', 'winScreen'].forEach(id => {
+    document.getElementById(id).addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (gameState === 'start' || gameState === 'gameover' || gameState === 'win') {
+        startGame();
+      }
+    }, { passive: false });
+  });
+}
 
 // ─── LEVEL LAYOUT ──────────────────────────────────────
 // The level is defined in terms of "rooms" (screens).
