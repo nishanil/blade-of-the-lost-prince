@@ -286,6 +286,18 @@ const COL = {
 let gameState = 'start';
 let cameraX = 0;
 let frameCount = 0;
+let currentLevel = 0;
+let score = 0;
+const MAX_LEVEL = 5;
+let levelCompleteTimer = 0;
+
+const LEVEL_CONFIG = [
+  { guardMin: 2, guardMax: 3, guardHp: 2, alertRange: 160, attackChance: 0.02, blockChance: 0.3, pitMin: 2, pitMax: 3, platMin: 2, platMax: 3 },
+  { guardMin: 3, guardMax: 4, guardHp: 3, alertRange: 180, attackChance: 0.03, blockChance: 0.4, pitMin: 3, pitMax: 4, platMin: 3, platMax: 4 },
+  { guardMin: 4, guardMax: 5, guardHp: 3, alertRange: 200, attackChance: 0.04, blockChance: 0.5, pitMin: 4, pitMax: 5, platMin: 3, platMax: 5 },
+  { guardMin: 5, guardMax: 6, guardHp: 4, alertRange: 220, attackChance: 0.05, blockChance: 0.55, pitMin: 4, pitMax: 6, platMin: 4, platMax: 6 },
+  { guardMin: 6, guardMax: 7, guardHp: 5, alertRange: 250, attackChance: 0.06, blockChance: 0.6, pitMin: 5, pitMax: 7, platMin: 4, platMax: 6 },
+];
 
 // ─── INPUT ─────────────────────────────────────────────
 const keys = {};
@@ -388,8 +400,8 @@ function buildLevel() {
   }
 
   // ── Random pits ──
-  // Place 3-6 pits spread across the level, avoiding start and exit zones
-  const pitCount = randInt(3, 6);
+  const cfg = LEVEL_CONFIG[currentLevel];
+  const pitCount = randInt(cfg.pitMin, cfg.pitMax);
   const usedCols = new Set();
   // Reserve cols 0-5 (start) and 75-79 (exit)
   for (let c = 0; c <= 5; c++) usedCols.add(c);
@@ -416,7 +428,7 @@ function buildLevel() {
 
   // ── Random platforms ──
   // Row 7 or 8 only — both are jumpable from ground (max jump ~2.5 tiles)
-  const platCount = randInt(3, 6);
+  const platCount = randInt(cfg.platMin, cfg.platMax);
   for (let i = 0; i < platCount; i++) {
     const platWidth = randInt(3, 5);
     const platRow = randInt(7, 8);
@@ -572,27 +584,29 @@ function initEntities() {
     swordOut: false,
   };
 
-  // Place 3-5 guards spread across the level, avoiding start zone
-  const guardCount = randInt(3, 5);
+  // Place guards spread across the level, avoiding start zone
+  const cfg = LEVEL_CONFIG[currentLevel];
+  const guardCount = randInt(cfg.guardMin, cfg.guardMax);
   guards = [];
   const guardZoneSize = Math.floor(2000 / guardCount);
   for (let i = 0; i < guardCount; i++) {
     const zoneStart = 300 + i * guardZoneSize;
     const gx = randInt(zoneStart, zoneStart + guardZoneSize - 100);
-    guards.push(createGuard(Math.min(gx, 2350), 'patrol'));
+    guards.push(createGuard(Math.min(gx, 2350), 'patrol', cfg));
   }
 
   particles = [];
 }
 
-function createGuard(x, behavior) {
+function createGuard(x, behavior, cfg) {
+  const hp = cfg ? cfg.guardHp : 3;
   return {
     x: x, y: FLOOR_ROW * TILE - 72,
     w: 28, h: 70,
     vx: 0, vy: 0,
     facing: -1,
     grounded: false,
-    hp: 3, maxHp: 3,
+    hp: hp, maxHp: hp,
     state: 'idle',
     stateTimer: 0,
     attackCooldown: 0,
@@ -603,8 +617,10 @@ function createGuard(x, behavior) {
     patrolDir: -1,
     patrolOriginX: x,
     patrolRange: 80,
-    alertRange: 180,
+    alertRange: cfg ? cfg.alertRange : 180,
     attackRange: 44,
+    attackChance: cfg ? cfg.attackChance : 0.03,
+    blockChance: cfg ? cfg.blockChance : 0.4,
     alive: true,
     swordOut: true,
   };
@@ -757,11 +773,21 @@ function updatePlayer() {
   const result = moveEntity(p);
   if (result === 'spikes' || result === 'fell') p.hp = 0;
   if (result === 'exit') {
-    gameState = 'win';
-    document.getElementById('winScreen').classList.remove('hidden');
+    score += 500 + p.hp * 50;
+    if (currentLevel < MAX_LEVEL - 1) {
+      gameState = 'levelcomplete';
+      levelCompleteTimer = 120;
+    } else {
+      gameState = 'win';
+      document.getElementById('winScreen').querySelector('.subtitle').textContent =
+        'You have escaped the dungeon! Final Score: ' + score;
+      document.getElementById('winScreen').classList.remove('hidden');
+    }
   }
   if (p.hp <= 0) {
     gameState = 'gameover';
+    document.getElementById('gameOverScreen').querySelector('.subtitle').textContent =
+      'The dungeon claims another soul... Level ' + (currentLevel + 1) + ' — Score: ' + score;
     document.getElementById('gameOverScreen').classList.remove('hidden');
   }
 }
@@ -789,6 +815,7 @@ function checkSwordHit(attacker, targets) {
       spawnParticles(target.x + target.w / 2, target.y + 14, '#cc3333', 6);
       if (target.hp <= 0 && target.alive !== undefined) {
         target.alive = false;
+        score += 100;
         spawnParticles(target.x + target.w / 2, target.y + target.h / 2, '#9050a0', 12);
       }
     }
@@ -820,9 +847,9 @@ function updateGuard(g) {
       g.state = 'run';
     } else {
       g.vx *= 0.5;
-      if (g.attackCooldown <= 0 && Math.random() < 0.03) {
+      if (g.attackCooldown <= 0 && Math.random() < g.attackChance) {
         g.state = 'attack'; g.stateTimer = 0; g.attackCooldown = 40;
-      } else if (player.state === 'attack' && player.stateTimer < 6 && Math.random() < 0.4) {
+      } else if (player.state === 'attack' && player.stateTimer < 6 && Math.random() < g.blockChance) {
         g.state = 'block'; g.stateTimer = 0;
       } else {
         g.state = 'idle';
@@ -1522,8 +1549,19 @@ function drawParticles() {
 }
 
 function drawHUD() {
-  // Original PoP used small triangular health pips at bottom of screen
   const p = player;
+
+  // Level indicator — top left
+  ctx.fillStyle = '#d4a44a';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('LEVEL ' + (currentLevel + 1), 10, 18);
+
+  // Score — top center
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('SCORE ' + score, W / 2, 18);
+  ctx.textAlign = 'left';
 
   // Player health — red triangles at bottom-left (like original)
   for (let i = 0; i < p.maxHp; i++) {
@@ -1617,13 +1655,26 @@ function update() {
     updateParticles();
     updateCamera();
     frameCount++;
+  } else if (gameState === 'levelcomplete') {
+    frameCount++;
+    levelCompleteTimer--;
+    if (levelCompleteTimer <= 0) {
+      const savedHp = player.hp;
+      currentLevel++;
+      buildLevel();
+      randomizeDecorations();
+      initEntities();
+      player.hp = savedHp;
+      cameraX = 0;
+      gameState = 'playing';
+    }
   }
   for (const k in justPressed) justPressed[k] = false;
 }
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  if (gameState === 'playing' || gameState === 'gameover' || gameState === 'win') {
+  if (gameState === 'playing' || gameState === 'gameover' || gameState === 'win' || gameState === 'levelcomplete') {
     drawLevel();
     for (const g of guards) { if (!g.alive) drawCharacter(g, true); }
     for (const g of guards) { if (g.alive) drawCharacter(g, true); }
@@ -1631,9 +1682,26 @@ function draw() {
     drawParticles();
     drawHUD();
   }
+  if (gameState === 'levelcomplete') {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#d4a44a';
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('LEVEL ' + (currentLevel + 1) + ' COMPLETE', W / 2, H / 2 - 30);
+    ctx.font = '18px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('Score: ' + score, W / 2, H / 2 + 10);
+    ctx.font = '14px monospace';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('Next level...', W / 2, H / 2 + 40);
+    ctx.textAlign = 'left';
+  }
 }
 
 function startGame() {
+  currentLevel = 0;
+  score = 0;
   buildLevel();
   randomizeDecorations();
   initEntities();
