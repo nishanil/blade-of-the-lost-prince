@@ -35,7 +35,7 @@
     image-rendering: pixelated;
     touch-action: none;
   }
-  #startScreen, #gameOverScreen, #winScreen {
+  #startScreen, #gameOverScreen, #winScreen, #charSelectScreen {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
@@ -47,7 +47,7 @@
     color: #d4a44a;
     z-index: 10;
   }
-  #startScreen h1, #gameOverScreen h1, #winScreen h1 {
+  #startScreen h1, #gameOverScreen h1, #winScreen h1, #charSelectScreen h1 {
     font-size: 32px;
     text-transform: uppercase;
     letter-spacing: 6px;
@@ -77,6 +77,39 @@
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.2; }
+  }
+  #charOptions {
+    display: flex;
+    flex-direction: row;
+    gap: 32px;
+    margin: 20px 0;
+  }
+  .char-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 18px;
+    border: 3px solid #555;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .char-option.selected {
+    border-color: #d4a44a;
+    box-shadow: 0 0 12px rgba(212, 164, 74, 0.4);
+  }
+  .char-option canvas {
+    margin-bottom: 8px;
+  }
+  .char-option .char-label {
+    color: #ccc;
+    font-size: 14px;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .char-option.selected .char-label {
+    color: #d4a44a;
   }
   .hidden { display: none !important; }
 
@@ -156,6 +189,21 @@
       <p class="blink" id="startPrompt">Press ENTER to Start</p>
     </div>
 
+    <div id="charSelectScreen" class="hidden">
+      <h1>Choose Your Hero</h1>
+      <div id="charOptions">
+        <div class="char-option selected" id="charOptionPrince" data-char="prince">
+          <canvas id="previewPrince" width="60" height="90"></canvas>
+          <span class="char-label">Jack</span>
+        </div>
+        <div class="char-option" id="charOptionPrincess" data-char="princess">
+          <canvas id="previewPrincess" width="60" height="90"></canvas>
+          <span class="char-label">Rose</span>
+        </div>
+      </div>
+      <p class="blink" id="charSelectPrompt">Press ENTER to Confirm</p>
+    </div>
+
     <div id="gameOverScreen" class="hidden">
       <h1>You Died</h1>
       <p class="subtitle">The dungeon claims another soul...</p>
@@ -198,6 +246,7 @@ if (isTouchDevice) {
   document.getElementById('startPrompt').textContent = 'Tap to Start';
   document.getElementById('retryPrompt').textContent = 'Tap to Retry';
   document.getElementById('playAgainPrompt').textContent = 'Tap to Play Again';
+  document.getElementById('charSelectPrompt').textContent = 'Tap to Confirm';
 }
 
 // ─── RESPONSIVE CANVAS SCALING ────────────────────────
@@ -276,6 +325,11 @@ const COL = {
   swordBlade: '#c8d0dd',
   swordHilt: '#8B7020',
 
+  // Princess
+  princessTunic: '#4a8db5',
+  princessHair: '#5c2a0e',
+  princessPants: '#3a6a8a',
+
   // HUD
   hpFull: '#cc2222',
   hpBg: '#222',
@@ -284,6 +338,8 @@ const COL = {
 
 // ─── GAME STATE ────────────────────────────────────────
 let gameState = 'start';
+let selectedCharacter = 'prince'; // 'prince' or 'princess'
+let charSelectIndex = 0; // 0 = prince, 1 = princess
 let cameraX = 0;
 let frameCount = 0;
 let currentLevel = 0;
@@ -342,7 +398,7 @@ if (isTouchDevice) {
   canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     if (gameState === 'start' || gameState === 'gameover' || gameState === 'win') {
-      startGame();
+      showCharSelect();
     }
   }, { passive: false });
 
@@ -351,10 +407,45 @@ if (isTouchDevice) {
     document.getElementById(id).addEventListener('touchstart', e => {
       e.preventDefault();
       if (gameState === 'start' || gameState === 'gameover' || gameState === 'win') {
-        startGame();
+        showCharSelect();
       }
     }, { passive: false });
   });
+
+  // Tap on char select options
+  document.getElementById('charOptionPrince').addEventListener('touchstart', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (gameState === 'charselect') {
+      if (charSelectIndex === 0) {
+        startGame();
+      } else {
+        charSelectIndex = 0;
+        updateCharSelectUI();
+      }
+    }
+  }, { passive: false });
+
+  document.getElementById('charOptionPrincess').addEventListener('touchstart', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (gameState === 'charselect') {
+      if (charSelectIndex === 1) {
+        startGame();
+      } else {
+        charSelectIndex = 1;
+        updateCharSelectUI();
+      }
+    }
+  }, { passive: false });
+
+  // Tap confirm prompt on char select
+  document.getElementById('charSelectScreen').addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (gameState === 'charselect') {
+      startGame();
+    }
+  }, { passive: false });
 }
 
 // ─── LEVEL LAYOUT ──────────────────────────────────────
@@ -1140,15 +1231,16 @@ function drawCharacter(ent, isGuard) {
     ctx.translate(sx, sy);
   }
 
+  const isPrincess = !isGuard && selectedCharacter === 'princess';
   const skin = isGuard ? COL.guardSkin : COL.skinTone;
   const skinShade = darken(isGuard ? COL.guardSkin : COL.skinTone, 20);
   const skinHi = lighten(isGuard ? COL.guardSkin : COL.skinTone, 15);
-  const tunic = isGuard ? COL.guardTunic : COL.princeTunic;
+  const tunic = isGuard ? COL.guardTunic : (isPrincess ? COL.princessTunic : COL.princeTunic);
   const tunicShade = darken(tunic, 22);
   const tunicHi = lighten(tunic, 12);
-  const pants = isGuard ? COL.guardPants : COL.princePants;
+  const pants = isGuard ? COL.guardPants : (isPrincess ? COL.princessPants : COL.princePants);
   const pantsShade = darken(pants, 18);
-  const hair = isGuard ? COL.guardHair : COL.princeHair;
+  const hair = isGuard ? COL.guardHair : (isPrincess ? COL.princessHair : COL.princeHair);
 
   if (ent.hurtCooldown > 20) ctx.globalAlpha = 0.5;
 
@@ -1290,9 +1382,11 @@ function drawCharacter(ent, isGuard) {
   // Collar / neckline
   ctx.fillStyle = darken(tunic, 30);
   ctx.fillRect(8, 26 + bob + breathe, 10, 3);
-  // V-neck opening showing skin
-  ctx.fillStyle = skin;
-  ctx.fillRect(11, 27 + bob + breathe, 4, 3);
+  if (!isPrincess) {
+    // V-neck opening showing skin (prince only)
+    ctx.fillStyle = skin;
+    ctx.fillRect(11, 27 + bob + breathe, 4, 3);
+  }
 
   // Tunic lower folds/creases
   ctx.fillStyle = tunicShade;
@@ -1300,9 +1394,25 @@ function drawCharacter(ent, isGuard) {
   ctx.fillRect(14, 42 + bob + breathe, 2, 4);
   ctx.fillRect(19, 39 + bob + breathe, 2, 5);
 
-  // Tunic hem (bottom edge)
-  ctx.fillStyle = darken(tunic, 15);
-  ctx.fillRect(5, 48 + bob + breathe, 18, 2);
+  if (isPrincess) {
+    // Dress extension — tunic extends longer (mid-thigh)
+    ctx.fillStyle = tunic;
+    ctx.fillRect(5, 49 + bob + breathe, 18, 6);
+    // Dress side shading
+    ctx.fillStyle = tunicShade;
+    ctx.fillRect(5, 49 + bob + breathe, 3, 6);
+    // Dress hem
+    ctx.fillStyle = darken(tunic, 15);
+    ctx.fillRect(4, 54 + bob + breathe, 20, 2);
+    // Slight flare at bottom
+    ctx.fillStyle = tunic;
+    ctx.fillRect(4, 53 + bob + breathe, 1, 3);
+    ctx.fillRect(23, 53 + bob + breathe, 1, 3);
+  } else {
+    // Tunic hem (bottom edge — prince)
+    ctx.fillStyle = darken(tunic, 15);
+    ctx.fillRect(5, 48 + bob + breathe, 18, 2);
+  }
 
   // Belt
   ctx.fillStyle = '#7a6018';
@@ -1459,7 +1569,29 @@ function drawCharacter(ent, isGuard) {
 
   // ── Hair ──
   ctx.fillStyle = hair;
-  if (!isGuard) {
+  if (isPrincess) {
+    // Princess's longer auburn hair — top of head
+    ctx.fillRect(5, 3 + bob, 17, 6);
+    ctx.fillRect(4, 5 + bob, 3, 8);
+    // Hair parting / volume on top
+    ctx.fillStyle = lighten(hair, 20);
+    ctx.fillRect(10, 3 + bob, 6, 2);
+    // Hair flowing back — longer, to shoulder level
+    ctx.fillStyle = hair;
+    ctx.fillRect(3, 7 + bob, 4, 10);
+    ctx.fillRect(2, 9 + bob, 3, 12);
+    ctx.fillRect(1, 12 + bob, 2, 14);
+    ctx.fillRect(0, 16 + bob, 2, 14);
+    // Hair flowing forward (front side)
+    ctx.fillRect(20, 7 + bob, 3, 8);
+    ctx.fillRect(21, 12 + bob, 3, 10);
+    ctx.fillRect(22, 18 + bob, 2, 8);
+    // Hair tips highlights
+    ctx.fillStyle = lighten(hair, 15);
+    ctx.fillRect(0, 28 + bob, 2, 2);
+    ctx.fillRect(22, 24 + bob, 2, 2);
+    ctx.fillRect(1, 24 + bob, 2, 2);
+  } else if (!isGuard) {
     // Prince's dark hair — top of head
     ctx.fillRect(5, 3 + bob, 17, 6);
     ctx.fillRect(4, 5 + bob, 3, 8);
@@ -1711,6 +1843,7 @@ function startGame() {
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
   document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('charSelectScreen').classList.add('hidden');
 }
 
 function gameLoop() {
@@ -1719,11 +1852,246 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
+function drawCharPreview(canvasId, charType) {
+  const cvs = document.getElementById(canvasId);
+  const pc = cvs.getContext('2d');
+  pc.clearRect(0, 0, cvs.width, cvs.height);
+
+  const isPrincessPreview = charType === 'princess';
+  const skin = COL.skinTone;
+  const skinShade = darken(skin, 20);
+  const skinHi = lighten(skin, 15);
+  const tunic = isPrincessPreview ? COL.princessTunic : COL.princeTunic;
+  const tunicShade = darken(tunic, 22);
+  const tunicHi = lighten(tunic, 12);
+  const pantsCol = isPrincessPreview ? COL.princessPants : COL.princePants;
+  const pantsShade = darken(pantsCol, 18);
+  const hairCol = isPrincessPreview ? COL.princessHair : COL.princeHair;
+
+  // Offset to center the 28x70 sprite in the 60x90 canvas
+  pc.save();
+  pc.translate(16, 10);
+
+  // Shadow
+  pc.fillStyle = 'rgba(0,0,0,0.3)';
+  pc.beginPath();
+  pc.ellipse(14, 70, 14, 4, 0, 0, Math.PI * 2);
+  pc.fill();
+
+  // Back leg
+  pc.fillStyle = pantsShade;
+  pc.fillRect(5, 49, 6, 10);
+  pc.fillStyle = darken(pantsCol, 30);
+  pc.fillRect(4, 58, 7, 6);
+  pc.fillStyle = '#332211';
+  pc.fillRect(3, 63, 8, 5);
+  pc.fillRect(2, 66, 5, 3);
+
+  // Front leg
+  pc.fillStyle = pantsCol;
+  pc.fillRect(12, 49, 7, 10);
+  pc.fillStyle = pantsShade;
+  pc.fillRect(12, 58, 7, 6);
+  pc.fillStyle = '#443322';
+  pc.fillRect(11, 63, 9, 5);
+  pc.fillRect(18, 66, 5, 3);
+  pc.fillStyle = '#221100';
+  pc.fillRect(11, 67, 12, 2);
+
+  // Torso
+  pc.fillStyle = tunic;
+  pc.fillRect(5, 26, 18, 24);
+  pc.fillStyle = tunicShade;
+  pc.fillRect(5, 26, 4, 24);
+  pc.fillStyle = tunicHi;
+  pc.fillRect(20, 27, 2, 10);
+
+  // Collar
+  pc.fillStyle = darken(tunic, 30);
+  pc.fillRect(8, 26, 10, 3);
+  if (!isPrincessPreview) {
+    pc.fillStyle = skin;
+    pc.fillRect(11, 27, 4, 3);
+  }
+
+  // Tunic folds
+  pc.fillStyle = tunicShade;
+  pc.fillRect(7, 40, 2, 6);
+  pc.fillRect(14, 42, 2, 4);
+  pc.fillRect(19, 39, 2, 5);
+
+  if (isPrincessPreview) {
+    // Dress extension
+    pc.fillStyle = tunic;
+    pc.fillRect(5, 49, 18, 6);
+    pc.fillStyle = tunicShade;
+    pc.fillRect(5, 49, 3, 6);
+    pc.fillStyle = darken(tunic, 15);
+    pc.fillRect(4, 54, 20, 2);
+  } else {
+    pc.fillStyle = darken(tunic, 15);
+    pc.fillRect(5, 48, 18, 2);
+  }
+
+  // Belt
+  pc.fillStyle = '#7a6018';
+  pc.fillRect(5, 45, 18, 4);
+  pc.fillStyle = '#9a8028';
+  pc.fillRect(5, 45, 18, 1);
+  pc.fillStyle = '#ccaa40';
+  pc.fillRect(12, 45, 4, 4);
+
+  // Shoulders
+  pc.fillStyle = tunic;
+  pc.fillRect(3, 27, 5, 5);
+  pc.fillStyle = tunic;
+  pc.fillRect(20, 27, 6, 5);
+
+  // Back arm
+  pc.fillStyle = tunicShade;
+  pc.fillRect(1, 30, 5, 5);
+  pc.fillStyle = skinShade;
+  pc.fillRect(0, 35, 4, 9);
+  pc.fillRect(-1, 43, 5, 4);
+
+  // Front arm
+  pc.fillStyle = tunic;
+  pc.fillRect(22, 29, 5, 5);
+  pc.fillStyle = skin;
+  pc.fillRect(23, 34, 5, 9);
+  pc.fillRect(23, 42, 5, 4);
+
+  // Neck
+  pc.fillStyle = skin;
+  pc.fillRect(10, 22, 6, 6);
+
+  // Head
+  pc.fillStyle = skin;
+  pc.fillRect(6, 6, 16, 17);
+  pc.fillRect(8, 21, 12, 3);
+  pc.fillStyle = skinShade;
+  pc.fillRect(6, 8, 3, 13);
+  pc.fillStyle = skinHi;
+  pc.fillRect(16, 14, 3, 4);
+
+  // Hair
+  pc.fillStyle = hairCol;
+  if (isPrincessPreview) {
+    pc.fillRect(5, 3, 17, 6);
+    pc.fillRect(4, 5, 3, 8);
+    pc.fillStyle = lighten(hairCol, 20);
+    pc.fillRect(10, 3, 6, 2);
+    pc.fillStyle = hairCol;
+    pc.fillRect(3, 7, 4, 10);
+    pc.fillRect(2, 9, 3, 12);
+    pc.fillRect(1, 12, 2, 14);
+    pc.fillRect(0, 16, 2, 14);
+    pc.fillRect(20, 7, 3, 8);
+    pc.fillRect(21, 12, 3, 10);
+    pc.fillRect(22, 18, 2, 8);
+    pc.fillStyle = lighten(hairCol, 15);
+    pc.fillRect(0, 28, 2, 2);
+    pc.fillRect(22, 24, 2, 2);
+  } else {
+    pc.fillRect(5, 3, 17, 6);
+    pc.fillRect(4, 5, 3, 8);
+    pc.fillStyle = lighten(hairCol, 15);
+    pc.fillRect(10, 3, 6, 2);
+    pc.fillStyle = hairCol;
+    pc.fillRect(3, 7, 4, 10);
+    pc.fillRect(2, 9, 3, 8);
+    pc.fillRect(1, 12, 2, 6);
+    pc.fillStyle = lighten(hairCol, 10);
+    pc.fillRect(1, 16, 2, 2);
+  }
+
+  // Eyes
+  pc.fillStyle = '#eee';
+  pc.fillRect(16, 12, 4, 3);
+  pc.fillStyle = '#332211';
+  pc.fillRect(17, 12, 3, 3);
+  pc.fillStyle = '#111';
+  pc.fillRect(18, 13, 2, 2);
+  pc.fillStyle = '#fff';
+  pc.fillRect(18, 12, 1, 1);
+  pc.fillStyle = darken(hairCol, 10);
+  pc.fillRect(15, 10, 6, 2);
+
+  // Nose
+  pc.fillStyle = skinShade;
+  pc.fillRect(20, 15, 2, 4);
+
+  // Mouth
+  pc.fillStyle = darken(skin, 25);
+  pc.fillRect(17, 20, 4, 1);
+
+  // Ear
+  pc.fillStyle = skin;
+  pc.fillRect(5, 13, 3, 5);
+
+  pc.restore();
+}
+
+function drawCharPreviews() {
+  drawCharPreview('previewPrince', 'prince');
+  drawCharPreview('previewPrincess', 'princess');
+}
+
+function showCharSelect() {
+  gameState = 'charselect';
+  charSelectIndex = selectedCharacter === 'prince' ? 0 : 1;
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('charSelectScreen').classList.remove('hidden');
+  updateCharSelectUI();
+  drawCharPreviews();
+}
+
+function updateCharSelectUI() {
+  const princeOpt = document.getElementById('charOptionPrince');
+  const princessOpt = document.getElementById('charOptionPrincess');
+  if (charSelectIndex === 0) {
+    princeOpt.classList.add('selected');
+    princessOpt.classList.remove('selected');
+    selectedCharacter = 'prince';
+  } else {
+    princeOpt.classList.remove('selected');
+    princessOpt.classList.add('selected');
+    selectedCharacter = 'princess';
+  }
+}
+
 document.addEventListener('keydown', e => {
   if (e.code === 'Enter' || e.code === 'Space') {
     if (gameState === 'start' || gameState === 'gameover' || gameState === 'win') {
+      showCharSelect();
+    } else if (gameState === 'charselect') {
       startGame();
     }
+  }
+  if (gameState === 'charselect') {
+    if (e.code === 'ArrowLeft') {
+      charSelectIndex = 0;
+      updateCharSelectUI();
+    } else if (e.code === 'ArrowRight') {
+      charSelectIndex = 1;
+      updateCharSelectUI();
+    }
+  }
+});
+
+// Desktop click handlers for character selection
+document.getElementById('charOptionPrince').addEventListener('click', () => {
+  if (gameState === 'charselect') {
+    charSelectIndex = 0;
+    updateCharSelectUI();
+  }
+});
+document.getElementById('charOptionPrincess').addEventListener('click', () => {
+  if (gameState === 'charselect') {
+    charSelectIndex = 1;
+    updateCharSelectUI();
   }
 });
 
